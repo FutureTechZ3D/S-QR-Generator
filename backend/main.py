@@ -8,13 +8,24 @@ import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .core.config import settings
-from .routers import auth_router, qr_router
+from .core.database import get_db, ensure_indexes
+from .routers import auth_router, qr_router, social_router, dynamic_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run startup tasks (indexes) before serving, cleanup on shutdown."""
+    await ensure_indexes()
+    yield
+
 
 app = FastAPI(
     title="QRGenerator API",
@@ -22,6 +33,7 @@ app = FastAPI(
     version=settings.app_version,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -34,6 +46,8 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(qr_router)
+app.include_router(social_router)
+app.include_router(dynamic_router)
 
 # Serve QR output images
 qr_dir = settings.qr_output_dir

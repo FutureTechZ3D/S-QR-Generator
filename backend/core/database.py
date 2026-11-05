@@ -3,8 +3,18 @@ from .config import settings
 
 _client: AsyncIOMotorClient | None = None
 
+
 def get_db():
     global _client
     if _client is None:
         _client = AsyncIOMotorClient(settings.mongodb_url)
     return _client[settings.mongodb_db]
+
+
+async def ensure_indexes():
+    """Create all required MongoDB indexes at application startup."""
+    db = get_db()
+    await db.social_profiles.create_index("slug", unique=True)
+    await db.social_profiles.create_index("user_id")
+    await db.dynamic_qrs.create_index("user_id")
+    await db.qrcodes.create_index("user_id")
