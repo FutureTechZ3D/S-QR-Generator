@@ -66,3 +66,15 @@ async def get_optional_user(
     except Exception:
         pass
     return None
+
+
+async def require_pro(
+    current_user=Depends(get_current_user)
+):
+    """Dependency: raise HTTP 403 if user is on free plan."""
+    if current_user.get("plan", "free") == "free":
+        raise HTTPException(
+            status_code=403,
+            detail="This feature requires a PRO plan. Upgrade at /api/auth/upgrade."
+        )
+    return current_user

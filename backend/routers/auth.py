@@ -72,3 +72,19 @@ async def me(current_user=Depends(get_current_user)):
         "plan":      current_user.get("plan", "free"),
         "qr_count":  current_user.get("qr_count", 0),
     }
+
+
+@router.put("/upgrade")
+async def upgrade_plan(
+    plan: str = "pro",
+    current_user=Depends(get_current_user)
+):
+    """Upgrade user plan (for testing — sets plan to pro or business)."""
+    if plan not in ("pro", "business"):
+        raise HTTPException(400, "Invalid plan. Must be 'pro' or 'business'.")
+    db = get_db()
+    await db.users.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {"plan": plan}}
+    )
+    return {"id": current_user["_id"], "plan": plan, "message": f"Plan upgraded to {plan}"}
