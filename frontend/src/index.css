@@ -339,3 +339,225 @@ input, textarea, select { font-family: inherit; }
   font-size: 0.875rem;
   font-weight: 500;
 }
+
+/* ── QR Design Studio — 3-panel layout ──────────────────────────── */
+.studio {
+  display: grid;
+  grid-template-columns: 380px 1fr 300px;
+  gap: 0;
+  min-height: calc(100vh - 64px);
+  background: var(--bg);
+}
+.studio__left {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px;
+  max-height: calc(100vh - 64px);
+}
+.studio__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-2);
+  padding: 32px;
+  gap: 16px;
+}
+.studio__right {
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px;
+  max-height: calc(100vh - 64px);
+}
+
+/* ── Platform detection chip ────────────────────────────────────── */
+.platform-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: white;
+  cursor: default;
+}
+.platform-chip button {
+  background: rgba(255,255,255,0.3);
+  border: none;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0;
+}
+.platform-chip button:hover {
+  background: rgba(255,255,255,0.5);
+}
+
+/* ── Design preset cards ────────────────────────────────────────── */
+.preset-card {
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid transparent;
+}
+.preset-card:hover {
+  border-color: rgba(255,255,255,0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.preset-card--locked {
+  filter: grayscale(0.4);
+}
+.preset-card__lock {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.preset-card__emoji {
+  font-size: 1.5rem;
+}
+.preset-card__name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+/* ── Pro gate overlay ───────────────────────────────────────────── */
+.pro-gate {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.pro-gate__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.65);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  gap: 8px;
+  border-radius: inherit;
+}
+.pro-badge {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  display: inline-block;
+}
+.pro-badge--sm {
+  font-size: 0.6rem;
+  padding: 1px 5px;
+}
+
+/* ── Logo upload zone ───────────────────────────────────────────── */
+.logo-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.logo-dropzone:hover {
+  border-color: var(--brand);
+  background: var(--brand-light);
+}
+.logo-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.logo-preview img {
+  width: 50px;
+  height: 50px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+/* ── QR quality indicator ───────────────────────────────────────── */
+.qr-quality {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.qr-quality--good {
+  background: #DCFCE7;
+  color: #16A34A;
+}
+.qr-quality--warn {
+  background: #FEF3C7;
+  color: #D97706;
+}
+
+/* ── Scan badge ─────────────────────────────────────────────────── */
+.scan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #EFF6FF;
+  color: #2563EB;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+/* ── Studio responsive ──────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .studio {
+    grid-template-columns: 1fr;
+  }
+  .studio__left,
+  .studio__right {
+    border: none;
+    border-bottom: 1px solid var(--border);
+    max-height: none;
+  }
+  .studio__center {
+    padding: 24px 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .studio__left,
+  .studio__right {
+    padding: 16px;
+  }
+}

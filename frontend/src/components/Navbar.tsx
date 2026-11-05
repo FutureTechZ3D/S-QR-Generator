@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { QrCode } from 'lucide-react';
+import { QrCode, Link2, Zap } from 'lucide-react';
 import { getUser, clearToken } from '@/services/api';
 
 export default function Navbar() {
@@ -22,9 +22,18 @@ export default function Navbar() {
 
         <nav>
           <ul className="navbar__links">
-            <li><NavLink to="/">Create</NavLink></li>
+            <li><NavLink to="/">Create QR</NavLink></li>
+            <li>
+              <NavLink to="/social" style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <Link2 size={14} /> Social QR
+              </NavLink>
+            </li>
+            <li>
+              <NavLink to="/profile/create" style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <Zap size={14} /> Profile QR
+              </NavLink>
+            </li>
             {user && <li><NavLink to="/dashboard">My QR Codes</NavLink></li>}
-            <li><a href="#features">Features</a></li>
           </ul>
         </nav>
 
@@ -40,7 +49,7 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <NavLink to="/login" className="btn btn--ghost btn--sm">Log in</NavLink>
+              <NavLink to="/login"    className="btn btn--ghost btn--sm">Log in</NavLink>
               <NavLink to="/register" className="btn btn--primary btn--sm">Sign up free</NavLink>
             </>
           )}
