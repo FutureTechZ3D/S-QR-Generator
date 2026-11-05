@@ -12,6 +12,7 @@ DELETE /api/profile/{profile_id}     → delete profile (auth required, must own
 POST /api/profile/{profile_id}/track → increment visit count (no auth)
 GET  /p/{slug}                       → public profile landing page (no auth)
 """
+import html
 import uuid
 import re
 import aiofiles
@@ -254,10 +255,39 @@ async def track_profile_visit(profile_id: str):
 # ── Public Profile Landing Page (FEAT-002) ────────────────────────────────────
 
 def _luminance(hex_color: str) -> float:
-    """Return perceived luminance (0=dark, 1=bright) for a hex color."""
+    """Return perceived luminance (0=dark, 1=bright) for a hex color string."""
     h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return 1.0  # default to bright if malformed
     r, g, b = (int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
     return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def _build_404_html() -> str:
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profile Not Found | QRify</title>
+  <style>
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+           background:#f5f5f5; display:flex; align-items:center; justify-content:center;
+           min-height:100vh; color:#1a1a1a; }
+    .box { text-align:center; padding:40px 24px; }
+    h1 { font-size:2rem; margin:0 0 12px; }
+    p  { opacity:.6; margin:0 0 24px; }
+    a  { color:#1D59F9; text-decoration:none; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>🔍 Profile not found</h1>
+    <p>This QRify profile link does not exist or has been removed.</p>
+    <a href="http://localhost:5174">Create your own profile →</a>
+  </div>
+</body>
+</html>"""
 
 
 @router.get("/p/{slug}", response_class=HTMLResponse)
@@ -265,177 +295,183 @@ async def profile_landing_page(slug: str):
     """
     Public profile landing page. Returns mobile-first self-contained HTML.
     No external CDN dependencies — all CSS is inline.
+    All user-provided content is HTML-escaped via html.escape().
     """
     db = get_db()
     doc = await db.social_profiles.find_one({"slug": slug})
     if not doc:
-        return HTMLResponse(
-            content="<html><body><h1>Profile not found</h1></body></html>",
-            status_code=404,
-        )
+        # Acceptance criteria: return 200 with a "not found" HTML, not a 500 or hard 404
+        return HTMLResponse(content=_build_404_html(), status_code=200)
 
     profile = _doc_to_profile(doc)
     profile_id = doc["_id"]
 
-    # Decide text color based on background luminance
-    text_color = "#1a1a1a" if _luminance(profile.bg_color) > 0.5 else "#f5f5f5"
-    theme = profile.theme_color
+    # ── Colour & text helpers ─────────────────────────────────────────────────
+    bg_lum = _luminance(profile.bg_color)
+    # text_color: primary
+    text_color   = "#1a1a1a" if bg_lum >= 0.4 else "#FFFFFF"
+    # text_color_2: muted secondary
+    text_color_2 = "#555555" if bg_lum >= 0.4 else "#cccccc"
+    # text_color_3: very subtle (powered-by footer)
+    text_color_3 = "#aaaaaa" if bg_lum >= 0.4 else "#888888"
 
-    # Build initials fallback for avatar
-    initials = "".join(w[0].upper() for w in profile.name.split()[:2]) or "?"
+    theme_color = profile.theme_color
 
-    # Avatar section
+    # ── Avatar ────────────────────────────────────────────────────────────────
+    safe_name = html.escape(profile.name)
+    initials   = "".join(w[0].upper() for w in profile.name.split() if w)[:2] or "?"
+
     if profile.avatar_url:
-        avatar_html = (
-            f'<img src="{profile.avatar_url}" alt="{profile.name}" '
-            f'class="avatar" onerror="this.style.display=\'none\'; '
-            f'document.getElementById(\'avatar-init\').style.display=\'flex\';" />'
-            f'<div id="avatar-init" class="avatar avatar-init" style="display:none">'
-            f'{initials}</div>'
+        safe_avatar_url = html.escape(profile.avatar_url)
+        avatar_tag = (
+            f'<img src="{safe_avatar_url}" alt="{safe_name}" class="avatar" />'
         )
     else:
-        avatar_html = (
-            f'<div class="avatar avatar-init">{initials}</div>'
+        avatar_tag = (
+            f'<div class="avatar-initials">{html.escape(initials)}</div>'
         )
 
-    # Build link buttons
-    link_buttons = ""
+    # ── Bio ───────────────────────────────────────────────────────────────────
+    bio_tag = (
+        f'<p class="bio">{html.escape(profile.bio)}</p>'
+        if profile.bio
+        else ""
+    )
+
+    # ── Link buttons ──────────────────────────────────────────────────────────
+    links_html = ""
     for lnk in profile.links:
         plat = get_platform(lnk.platform_id)
         if plat:
-            btn_color = plat["color"]
-            btn_label = lnk.title or plat["name"]
-            icon = plat["icon_emoji"]
-            # Use white text for dark backgrounds, dark for light
-            btn_text = "#ffffff" if _luminance(btn_color) < 0.5 else "#1a1a1a"
-            link_buttons += (
-                f'<a href="{lnk.url}" class="link-btn" target="_blank" rel="noopener" '
-                f'style="background:{btn_color};color:{btn_text};" '
-                f'onclick="trackClick(\'{lnk.platform_id}\')">'
-                f'<span class="link-icon">{icon}</span>'
-                f'<span class="link-label">{btn_label}</span>'
-                f'</a>\n'
-            )
+            color      = plat["color"]
+            icon_emoji = plat["icon_emoji"]
+            plat_name  = plat["name"]
         else:
-            btn_label = lnk.title or lnk.url
-            link_buttons += (
-                f'<a href="{lnk.url}" class="link-btn" target="_blank" rel="noopener" '
-                f'style="background:{theme};color:#ffffff;">'
-                f'<span class="link-icon">🔗</span>'
-                f'<span class="link-label">{btn_label}</span>'
-                f'</a>\n'
-            )
+            color      = "#6B7280"
+            icon_emoji = "🔗"
+            plat_name  = lnk.platform_id
 
-    bio_section = f'<p class="bio">{profile.bio}</p>' if profile.bio else ""
+        btn_label = html.escape(lnk.title or plat_name)
+        safe_url  = html.escape(lnk.url)
+        links_html += (
+            f'<a href="{safe_url}" class="link-btn" '
+            f'style="background:{color};" '
+            f'target="_blank" rel="noopener">'
+            f'<span class="icon">{icon_emoji}</span>'
+            f'<span>{btn_label}</span>'
+            f'</a>\n'
+        )
 
-    html = f"""<!DOCTYPE html>
+    safe_username = html.escape(profile.username)
+
+    # ── Full HTML ─────────────────────────────────────────────────────────────
+    html_str = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{profile.name} — QRify Profile</title>
+  <title>{safe_name} | QRify Profile</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: {profile.bg_color};
-      color: {text_color};
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
-      padding: 24px 16px 48px;
+      display: flex;
+      justify-content: center;
     }}
     .profile {{
       max-width: 480px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
+      width: 100%;
+      padding: 32px 20px 60px;
     }}
     .avatar {{
       width: 80px;
       height: 80px;
       border-radius: 50%;
       object-fit: cover;
-      border: 3px solid {theme};
+      margin: 0 auto 16px;
+      display: block;
+      border: 3px solid {theme_color};
     }}
-    .avatar-init {{
+    .avatar-initials {{
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: {theme_color};
+      color: #fff;
+      font-size: 2rem;
+      font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: {theme};
-      color: #ffffff;
-      font-size: 1.6rem;
-      font-weight: 700;
+      margin: 0 auto 16px;
     }}
     h1 {{
+      text-align: center;
       font-size: 1.5rem;
       font-weight: 700;
-      text-align: center;
+      margin: 0 0 4px;
+      color: {text_color};
     }}
     .username {{
-      font-size: 0.95rem;
-      opacity: 0.7;
       text-align: center;
+      color: {text_color_2};
+      margin: 0 0 12px;
+      font-size: 0.9rem;
     }}
     .bio {{
-      font-size: 0.9rem;
       text-align: center;
-      opacity: 0.8;
-      max-width: 380px;
+      color: {text_color_2};
+      margin: 0 0 28px;
+      font-size: 0.95rem;
       line-height: 1.5;
     }}
     .links {{
-      width: 100%;
       display: flex;
       flex-direction: column;
       gap: 12px;
-      margin-top: 8px;
     }}
     .link-btn {{
-      width: 100%;
-      padding: 16px 20px;
-      border-radius: 12px;
-      font-size: 1.05rem;
-      font-weight: 600;
-      text-decoration: none;
       display: flex;
       align-items: center;
-      gap: 12px;
-      transition: opacity 0.15s, transform 0.1s;
+      gap: 14px;
+      padding: 16px 20px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      transition: opacity 0.15s;
     }}
-    .link-btn:hover {{ opacity: 0.88; transform: translateY(-1px); }}
-    .link-btn:active {{ transform: translateY(0); }}
-    .link-icon {{ font-size: 1.3rem; flex-shrink: 0; }}
-    .link-label {{ flex: 1; }}
-    .footer {{
-      margin-top: 40px;
-      font-size: 0.75rem;
-      opacity: 0.45;
+    .link-btn:hover {{ opacity: 0.88; }}
+    .link-btn .icon {{ font-size: 1.4rem; flex-shrink: 0; }}
+    .powered {{
       text-align: center;
+      margin-top: 32px;
+      font-size: 0.75rem;
+      color: {text_color_3};
     }}
-    .footer a {{ color: inherit; text-decoration: none; }}
+    .powered a {{ color: {theme_color}; text-decoration: none; }}
   </style>
 </head>
 <body>
   <div class="profile">
-    {avatar_html}
-    <h1>{profile.name}</h1>
-    <p class="username">@{profile.username}</p>
-    {bio_section}
+    {avatar_tag}
+    <h1>{safe_name}</h1>
+    <p class="username">@{safe_username}</p>
+    {bio_tag}
     <div class="links">
-      {link_buttons}
+      {links_html}
     </div>
-    <p class="footer">Powered by <a href="https://qrify.app" target="_blank" rel="noopener">QRify</a></p>
+    <p class="powered">Powered by <a href="http://localhost:5174">QRify</a></p>
   </div>
   <script>
-    // Track profile visit
-    fetch('/api/profile/{profile_id}/track', {{ method: 'POST' }}).catch(() => {{}});
-
-    function trackClick(platformId) {{
-      // Future: POST /api/profile/{profile_id}/click with platform info
-    }}
+    try {{
+      fetch('/api/profile/{profile_id}/track', {{ method: 'POST' }});
+    }} catch(e) {{}}
   </script>
 </body>
 </html>"""
 
-    return HTMLResponse(content=html, status_code=200)
+    return HTMLResponse(content=html_str, status_code=200)
