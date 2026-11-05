@@ -33,8 +33,9 @@ from ..services.platform_registry import (
     build_platform_url,
 )
 from ..services.platform_detector import detect_platform
+from ..services.logo_fetcher import fetch_website_logo, SSRFError
 from ..core.database import get_db
-from ..core.security import get_current_user, get_optional_user
+from ..core.security import get_current_user, get_optional_user, require_pro
 from ..core.config import settings
 
 router = APIRouter(tags=["social"])
@@ -85,6 +86,26 @@ async def detect_platform_endpoint(url: str = Body(..., embed=True)):
     """
     result = detect_platform(url)
     return {"platform": result}
+
+
+# ── Logo fetch (PRO) ─────────────────────────────────────────────────────────
+
+@router.post("/api/logo/fetch")
+async def fetch_logo(
+    url: str = Body(..., embed=True),
+    current_user=Depends(require_pro),
+):
+    """
+    Fetch website favicon/logo. PRO users only.
+    Returns {favicon_b64, og_image_b64, source}.
+    """
+    try:
+        result = await fetch_website_logo(url)
+        return result
+    except SSRFError as e:
+        raise HTTPException(status_code=400, detail=f"Security: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Could not fetch logo: {e}")
 
 
 # ── Social QR generation ──────────────────────────────────────────────────────
