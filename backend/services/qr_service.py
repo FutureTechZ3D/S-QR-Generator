@@ -128,8 +128,8 @@ def build_qr_content(qr: QRCreate) -> str:
 
 def _apply_gradient(img_pil: Image.Image, fg_hex: str, fg2_hex: str) -> Image.Image:
     """
-    Apply a left-to-right linear gradient over QR foreground pixels.
-    Dark pixels in the source image are replaced with the gradient color.
+    Apply a diagonal (top-left to bottom-right) linear gradient over QR foreground pixels.
+    Dark pixels are replaced with the gradient color; light pixels remain white.
     """
     def hex_to_rgb(h: str) -> tuple:
         h = h.lstrip("#")
@@ -143,13 +143,13 @@ def _apply_gradient(img_pil: Image.Image, fg_hex: str, fg2_hex: str) -> Image.Im
     pixels = img_rgba.load()
 
     for x in range(width):
-        t = x / max(width - 1, 1)
-        r = int(c1[0] + (c2[0] - c1[0]) * t)
-        g = int(c1[1] + (c2[1] - c1[1]) * t)
-        b = int(c1[2] + (c2[2] - c1[2]) * t)
         for y in range(height):
+            # Diagonal gradient: t from (0,0) top-left to (w-1, h-1) bottom-right
+            t = (x / max(width - 1, 1) + y / max(height - 1, 1)) / 2.0
+            r = int(c1[0] + (c2[0] - c1[0]) * t)
+            g = int(c1[1] + (c2[1] - c1[1]) * t)
+            b = int(c1[2] + (c2[2] - c1[2]) * t)
             pr, pg, pb, pa = pixels[x, y]
-            # Replace pixels that are close to the foreground color (dark pixels)
             luminance = 0.299 * pr + 0.587 * pg + 0.114 * pb
             if luminance < 128:
                 pixels[x, y] = (r, g, b, pa)
@@ -164,6 +164,10 @@ def generate_qr_image(qr_create: QRCreate) -> tuple[bytes, str]:
     """
     content = build_qr_content(qr_create)
     style   = qr_create.style
+
+    # Enforce minimum box_size for crisp output
+    if style.box_size < 8:
+        style = style.model_copy(update={"box_size": 8})
 
     has_logo = bool(style.logo_b64 or style.logo_url)
 
@@ -294,8 +298,9 @@ def generate_qr_image(qr_create: QRCreate) -> tuple[bytes, str]:
 
 
 def generate_qr_svg(qr_create: QRCreate) -> str:
-    """Generate an SVG QR code (scalable, perfect for print)."""
+    """Generate an SVG QR code (scalable, perfect for print). Respects QRStyle colors."""
     content = build_qr_content(qr_create)
+    style = qr_create.style
 
     qr = qrcode.QRCode(
         error_correction=qrcode.constants.ERROR_CORRECT_H,
@@ -304,8 +309,21 @@ def generate_qr_svg(qr_create: QRCreate) -> str:
     qr.make(fit=True)
 
     factory = qrcode.image.svg.SvgPathImage
-    img = qr.make_image(image_factory=factory)
+    img = qr.make_image(
+        image_factory=factory,
+        attrib={"fill": style.foreground},
+    )
 
     buf = io.BytesIO()
     img.save(buf)
-    return buf.getvalue().decode("utf-8")
+    svg_str = buf.getvalue().decode("utf-8")
+
+    # Inject background color into SVG if not white
+    if style.background and style.background.upper() != "#FFFFFF":
+        svg_str = svg_str.replace(
+            "<svg ",
+            f'<svg style="background:{style.background};" ',
+            1,
+        )
+
+    return svg_str
