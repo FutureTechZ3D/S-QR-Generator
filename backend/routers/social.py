@@ -32,6 +32,7 @@ from ..services.platform_registry import (
     get_platform,
     build_platform_url,
 )
+from ..services.platform_detector import detect_platform
 from ..core.database import get_db
 from ..core.security import get_current_user, get_optional_user
 from ..core.config import settings
@@ -72,6 +73,18 @@ def _doc_to_profile(doc: dict) -> SocialProfile:
 async def get_platforms():
     """Return all registered social platforms."""
     return list_platforms()
+
+
+# ── Platform detection ───────────────────────────────────────────────────────
+
+@router.post("/api/detect-platform")
+async def detect_platform_endpoint(url: str = Body(..., embed=True)):
+    """
+    Detect platform from a URL.
+    Returns the platform dict with suggested_theme, or {"platform": null} if no match.
+    """
+    result = detect_platform(url)
+    return {"platform": result}
 
 
 # ── Social QR generation ──────────────────────────────────────────────────────
