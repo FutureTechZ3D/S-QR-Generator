@@ -7,6 +7,8 @@ import {
 import { previewQR, createQR, getToken, detectPlatform, getTheme } from '@/services/api';
 import type { QRType, QRStyle, PlatformDetection, QRTheme } from '@/types';
 import { QR_TYPE_LABELS, DEFAULT_STYLE } from '@/types';
+import ProGate from '@/components/ProGate';
+import UpgradeModal from '@/components/UpgradeModal';
 
 // ── QR Type definitions ──────────────────────────────────────────────
 const QR_TYPES: { type: QRType; icon: React.ReactNode; label: string }[] = [
@@ -118,6 +120,32 @@ function ContentForm({
   }
 }
 
+// ── Static preset themes ─────────────────────────────────────────────
+const PRESET_THEMES: Array<{
+  platform_id: string;
+  name: string;
+  fg_color: string;
+  bg_color: string;
+  fg_color_2: string;
+  corner_style: 'square' | 'rounded' | 'extra_rounded';
+  error_correct: string;
+  description: string;
+}> = [
+  { platform_id: 'instagram',       name: 'Instagram',   fg_color: '#E1306C', bg_color: '#FFFFFF', fg_color_2: '#833AB4', corner_style: 'extra_rounded', error_correct: 'H', description: 'Instagram gradient' },
+  { platform_id: 'whatsapp',        name: 'WhatsApp',    fg_color: '#25D366', bg_color: '#FFFFFF', fg_color_2: '#25D366', corner_style: 'rounded',       error_correct: 'H', description: 'WhatsApp green' },
+  { platform_id: 'youtube',         name: 'YouTube',     fg_color: '#FF0000', bg_color: '#FFFFFF', fg_color_2: '#CC0000', corner_style: 'square',        error_correct: 'H', description: 'YouTube red' },
+  { platform_id: 'telegram',        name: 'Telegram',    fg_color: '#2CA5E0', bg_color: '#FFFFFF', fg_color_2: '#2CA5E0', corner_style: 'rounded',       error_correct: 'H', description: 'Telegram blue' },
+  { platform_id: 'x_twitter',       name: 'X (Twitter)', fg_color: '#000000', bg_color: '#FFFFFF', fg_color_2: '#000000', corner_style: 'square',        error_correct: 'H', description: 'X minimal' },
+  { platform_id: 'facebook',        name: 'Facebook',    fg_color: '#1877F2', bg_color: '#FFFFFF', fg_color_2: '#1877F2', corner_style: 'rounded',       error_correct: 'H', description: 'Facebook blue' },
+  { platform_id: 'linkedin_profile',name: 'LinkedIn',    fg_color: '#0A66C2', bg_color: '#FFFFFF', fg_color_2: '#0A66C2', corner_style: 'rounded',       error_correct: 'H', description: 'LinkedIn blue' },
+  { platform_id: 'tiktok',          name: 'TikTok',      fg_color: '#010101', bg_color: '#FFFFFF', fg_color_2: '#69C9D0', corner_style: 'square',        error_correct: 'H', description: 'TikTok' },
+];
+
+const PRESET_EMOJIS: Record<string, string> = {
+  instagram: '📸', whatsapp: '💬', youtube: '▶️', telegram: '✈️',
+  x_twitter: '𝕏', facebook: '👤', linkedin_profile: '💼', tiktok: '🎵',
+};
+
 // ── Main Home Page ────────────────────────────────────────────────────
 export default function Home() {
   const navigate = useNavigate();
@@ -134,6 +162,16 @@ export default function Home() {
   const [detectedPlatform, setDetectedPlatform] = useState<PlatformDetection | null>(null);
   const [appliedTheme, setAppliedTheme] = useState<QRTheme | null>(null);
   const detectDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Pro state
+  const [isPro, setIsPro] = useState<boolean>(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('qr_user') || '{}');
+      return u?.plan && u.plan !== 'free';
+    } catch { return false; }
+  });
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-preview as user types (debounced 600ms)
   const triggerPreview = useCallback((
@@ -208,7 +246,7 @@ export default function Home() {
     if (content) triggerPreview(activeType, content, resetStyle);
   }
 
-  function handleStyleChange(key: keyof QRStyle, value: string | number) {
+  function handleStyleChange(key: keyof QRStyle, value: string | number | boolean) {
     const newStyle = { ...style, [key]: value };
     setStyle(newStyle);
     if (content) triggerPreview(activeType, content, newStyle);
@@ -240,6 +278,52 @@ export default function Home() {
     }
   }
 
+  function handleApplyPreset(preset: typeof PRESET_THEMES[0]) {
+    if (!isPro) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    const newStyle: QRStyle = {
+      ...style,
+      foreground: preset.fg_color,
+      background: preset.bg_color,
+      fg_color_2: preset.fg_color_2 !== preset.fg_color ? preset.fg_color_2 : undefined,
+      corner_style: preset.corner_style,
+      error_correct: preset.error_correct,
+    };
+    setStyle(newStyle);
+    if (content) triggerPreview(activeType, content, newStyle);
+  }
+
+  async function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { setError('Logo must be under 2MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const b64 = (reader.result as string).split(',')[1];
+      const newStyle = { ...style, logo_b64: b64, logo_padding: true };
+      setStyle(newStyle);
+      if (content) triggerPreview(activeType, content, newStyle);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleLogoDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { setError('Logo must be under 2MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const b64 = (reader.result as string).split(',')[1];
+      const newStyle = { ...style, logo_b64: b64, logo_padding: true };
+      setStyle(newStyle);
+      if (content) triggerPreview(activeType, content, newStyle);
+    };
+    reader.readAsDataURL(file);
+  }
+
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────────────── */}
@@ -257,24 +341,27 @@ export default function Home() {
             No sign-up required. Download instantly in PNG or SVG.
           </p>
 
-          {/* ── QR Type selector ──────────────────────────────────── */}
-          <div className="qr-types">
-            {QR_TYPES.map(({ type, icon, label }) => (
-              <button
-                key={type}
-                className={`qr-type-chip ${activeType === type ? 'qr-type-chip--active' : ''}`}
-                onClick={() => handleTypeChange(type)}
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* ── Studio 3-panel layout ──────────────────────────── */}
+          <div className="studio">
 
-          {/* ── Generator ─────────────────────────────────────────── */}
-          <div className="generator">
-            {/* Left: Form */}
-            <div className="generator__form">
+            {/* LEFT PANEL */}
+            <div className="studio__left">
+
+              {/* QR type selector */}
+              <div className="qr-types">
+                {QR_TYPES.map(({ type, icon, label }) => (
+                  <button
+                    key={type}
+                    className={`qr-type-chip ${activeType === type ? 'qr-type-chip--active' : ''}`}
+                    onClick={() => handleTypeChange(type)}
+                  >
+                    {icon}
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Title */}
               <div className="field">
                 <label>QR Code title</label>
                 <input
@@ -286,12 +373,14 @@ export default function Home() {
                 <p className="field__hint">For your reference — not shown in QR code</p>
               </div>
 
+              {/* Content form */}
               <ContentForm
                 type={activeType}
                 value={content}
                 onChange={handleContentChange}
               />
 
+              {/* Platform chip */}
               {activeType === 'url' && detectedPlatform && (
                 <div
                   className="platform-chip"
@@ -316,7 +405,53 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Style customization */}
+              {/* Logo section */}
+              <div className="field" style={{marginBottom: 16}}>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                  🖼 Logo in QR center
+                  {!isPro && <span className="pro-badge">PRO</span>}
+                </label>
+                <ProGate feature="logo_upload" isPro={isPro} onUpgradeClick={() => setShowUpgradeModal(true)}>
+                  <div
+                    onDragOver={e => { e.preventDefault(); }}
+                    onDrop={handleLogoDrop}
+                    onClick={() => logoInputRef.current?.click()}
+                    style={{border: '2px dashed var(--border)',
+                      borderRadius: 10,
+                      padding: '16px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      color: 'var(--text-2)',}}
+                  >
+                    {style.logo_b64 ? (
+                      <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                        <img
+                          src={`data:image/png;base64,${style.logo_b64}`}
+                          alt="Logo"
+                          style={{width: 48, height: 48, objectFit: 'contain', borderRadius: 6}}
+                        />
+                        <span>Logo loaded</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); handleStyleChange('logo_b64', ''); }}
+                          style={{marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-2)'}}
+                        >✕ Remove</button>
+                      </div>
+                    ) : (
+                      <span>📂 Drop logo here or click to upload<br /><small>PNG, JPG, SVG · max 2MB</small></span>
+                    )}
+                  </div>
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+                    style={{display: 'none'}}
+                    onChange={handleLogoFileChange}
+                  />
+                </ProGate>
+              </div>
+
+              {/* Design section */}
               <details style={{ marginBottom: 20 }}>
                 <summary style={{
                   cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem',
@@ -371,6 +506,49 @@ export default function Home() {
                         onChange={e => handleStyleChange('border', parseInt(e.target.value))} />
                     </div>
                   </div>
+
+                  {/* Corner style */}
+                  <div className="field">
+                    <label>Corner style</label>
+                    <select
+                      value={style.corner_style ?? 'square'}
+                      onChange={e => handleStyleChange('corner_style', e.target.value)}
+                    >
+                      <option value="square">Square</option>
+                      <option value="rounded">Rounded</option>
+                      <option value="extra_rounded">Extra Rounded</option>
+                    </select>
+                  </div>
+
+                  {/* Gradient second color */}
+                  <div className="field">
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                      Gradient color
+                      <input
+                        type="checkbox"
+                        checked={!!style.fg_color_2}
+                        onChange={e => {
+                          if (!e.target.checked) {
+                            handleStyleChange('fg_color_2', '');
+                          } else {
+                            handleStyleChange('fg_color_2', style.foreground);
+                          }
+                        }}
+                        style={{marginLeft: 4}}
+                      />
+                    </label>
+                    {style.fg_color_2 && (
+                      <div className="color-row">
+                        <div className="color-swatch" style={{ background: style.fg_color_2 }}>
+                          <input type="color" value={style.fg_color_2}
+                            onChange={e => handleStyleChange('fg_color_2', e.target.value)} />
+                        </div>
+                        <input type="text" value={style.fg_color_2}
+                          onChange={e => handleStyleChange('fg_color_2', e.target.value)}
+                          style={{ flex: 1 }} />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </details>
 
@@ -401,69 +579,86 @@ export default function Home() {
                 ))}
               </div>
 
-              {error && <div className="error" style={{ marginBottom: 14 }}>⚠ {error}</div>}
+            </div>{/* END studio__left */}
 
-              {/* Actions */}
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  className="btn btn--secondary"
-                  style={{ flex: 1 }}
-                  onClick={downloadPreview}
-                  disabled={!previewB64}
-                >
-                  <Download size={16} /> Download PNG
-                </button>
-                <button
-                  className="btn btn--primary"
-                  style={{ flex: 1 }}
-                  onClick={handleSave}
-                  disabled={saving || !content.trim() || !title.trim()}
-                >
-                  {saving
-                    ? <><span className="spinner" /> Saving...</>
-                    : <><Save size={16} /> Save to account</>
-                  }
-                </button>
-              </div>
-            </div>
-
-            {/* Right: Preview */}
-            <div className="generator__preview">
-              <p style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-2)',
-                textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Live Preview
-              </p>
-
-              <div className="qr-preview">
-                {generating ? (
-                  <span className="spinner spinner--brand" />
-                ) : previewB64 ? (
-                  <img src={`data:image/png;base64,${previewB64}`} alt="QR preview" />
-                ) : (
-                  <div className="qr-preview--placeholder">
-                    <QrCode size={40} style={{ opacity: 0.2, margin: '0 auto 8px' }} />
-                    <p>Enter content to<br />generate QR code</p>
+            {/* CENTRE PANEL */}
+            <div className="studio__center">
+              <div style={{textAlign: 'center', width: '100%', maxWidth: 400}}>
+                <p style={{fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-2)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16}}>
+                  Live Preview
+                </p>
+                <div className="qr-preview" style={{width: 280, height: 280, margin: '0 auto 20px'}}>
+                  {generating ? (
+                    <span className="spinner spinner--brand" />
+                  ) : previewB64 ? (
+                    <img src={`data:image/png;base64,${previewB64}`} alt="QR preview" />
+                  ) : (
+                    <div className="qr-preview--placeholder">
+                      <QrCode size={40} style={{opacity: 0.2, margin: '0 auto 8px'}} />
+                      <p>Enter content to<br />generate QR code</p>
+                    </div>
+                  )}
+                </div>
+                {detectedPlatform && (
+                  <div
+                    className="platform-chip"
+                    style={{background: detectedPlatform.color, marginBottom: 12, justifyContent: 'center'}}
+                  >
+                    <span>{detectedPlatform.icon_emoji}</span>
+                    <span>{detectedPlatform.name}</span>
                   </div>
                 )}
+                {previewB64 && (
+                  <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+                    <button className="btn btn--primary btn--full" onClick={downloadPreview}>
+                      <Download size={16} /> Download PNG
+                    </button>
+                    <button className="btn btn--secondary btn--full" onClick={handleSave} disabled={saving}>
+                      {saving ? <><span className="spinner" /> Saving...</> : <><Save size={16} /> Save to account</>}
+                    </button>
+                  </div>
+                )}
+                {error && <div className="error" style={{marginTop: 12}}>⚠ {error}</div>}
               </div>
+            </div>{/* END studio__center */}
 
-              {previewB64 && (
-                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <button className="btn btn--primary btn--full" onClick={downloadPreview}>
-                    <Download size={16} /> Download PNG
-                  </button>
-                  <button className="btn btn--secondary btn--full" onClick={handleSave}>
-                    <Save size={16} /> Save to account
-                  </button>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', textAlign: 'center' }}>
-                    High-resolution · Transparent background · SVG also available
-                  </p>
+            {/* RIGHT PANEL */}
+            <div className="studio__right">
+              <div>
+                <p style={{fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'var(--text-1)'}}>
+                  🎨 Design Presets
+                </p>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
+                  {PRESET_THEMES.map(preset => (
+                    <div
+                      key={preset.platform_id}
+                      className={`preset-card ${!isPro ? 'preset-card--locked' : ''}`}
+                      style={{background: preset.fg_color, color: 'white'}}
+                      onClick={() => handleApplyPreset(preset)}
+                      title={preset.description}
+                    >
+                      {!isPro && <div className="preset-card__lock">🔒 PRO</div>}
+                      <div style={{fontSize: '1.5rem', marginBottom: 4}}>{PRESET_EMOJIS[preset.platform_id] || '🌐'}</div>
+                      <div style={{fontSize: '0.8rem', fontWeight: 700}}>{preset.name}</div>
+                      <div style={{fontSize: '0.7rem', opacity: 0.8, marginTop: 2}}>APPLY</div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            </div>{/* END studio__right */}
+
+          </div>{/* END studio */}
         </div>
       </section>
+
+      {/* ── Upgrade modal ────────────────────────────────────────── */}
+      {showUpgradeModal && (
+        <UpgradeModal
+          onClose={() => setShowUpgradeModal(false)}
+          onUpgraded={() => setIsPro(true)}
+        />
+      )}
 
       {/* ── Features ─────────────────────────────────────────────── */}
       <section className="container" style={{ padding: '0 24px 60px' }} id="features">
