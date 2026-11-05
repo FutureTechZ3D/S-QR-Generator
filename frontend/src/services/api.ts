@@ -1,4 +1,8 @@
-import type { QRCode, AuthResponse, User, QRType, QRStyle } from '@/types';
+import type {
+  QRCode, AuthResponse, User, QRType, QRStyle,
+  Platform, SocialProfile, SocialLink, DynamicQR,
+  PlatformDetection, QRTheme,
+} from '@/types';
 
 const BASE = '/api';
 
@@ -114,4 +118,148 @@ export async function deleteQRCode(id: string): Promise<void> {
 
 export function downloadUrl(id: string, fmt: 'image' | 'svg'): string {
   return `${BASE}/qr/${id}/${fmt}`;
+}
+
+// ── Platforms ───────────────────────────────────────────────────────
+export async function listPlatforms(): Promise<Platform[]> {
+  const r = await fetch(`${BASE}/platforms`);
+  return json<Platform[]>(r);
+}
+
+// ── Social QR ───────────────────────────────────────────────────────
+export async function generateSocialQR(req: {
+  platform_id:      string;
+  username_or_url:  string;
+  title:            string;
+  style:            QRStyle;
+  save?:            boolean;
+}): Promise<{ image_b64: string; platform_url: string }> {
+  const r = await fetch(`${BASE}/qr/social`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(req),
+  });
+  return json<{ image_b64: string; platform_url: string }>(r);
+}
+
+// ── Social Profile CRUD ─────────────────────────────────────────────
+export async function createProfile(data: {
+  name:        string;
+  username:    string;
+  bio?:        string;
+  avatar_url?: string;
+  theme_color: string;
+  bg_color:    string;
+  links:       SocialLink[];
+}): Promise<SocialProfile> {
+  const r = await fetch(`${BASE}/profile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return json<SocialProfile>(r);
+}
+
+export async function listProfiles(): Promise<SocialProfile[]> {
+  const r = await fetch(`${BASE}/profiles`, { headers: authHeaders() });
+  return json<SocialProfile[]>(r);
+}
+
+export async function getProfile(id: string): Promise<SocialProfile> {
+  const r = await fetch(`${BASE}/profile/${id}`, { headers: authHeaders() });
+  return json<SocialProfile>(r);
+}
+
+export async function updateProfile(
+  id: string,
+  data: Partial<Pick<SocialProfile, 'name' | 'username' | 'bio' | 'avatar_url' | 'theme_color' | 'bg_color' | 'links'>>
+): Promise<SocialProfile> {
+  const r = await fetch(`${BASE}/profile/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return json<SocialProfile>(r);
+}
+
+export async function deleteProfile(id: string): Promise<void> {
+  await fetch(`${BASE}/profile/${id}`, { method: 'DELETE', headers: authHeaders() });
+}
+
+// ── Dynamic QR CRUD ─────────────────────────────────────────────────
+export async function createDynamicQR(data: {
+  title:           string;
+  destination_url: string;
+  expires_at?:     string;
+  password?:       string;
+}): Promise<DynamicQR> {
+  const r = await fetch(`${BASE}/dynamic`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return json<DynamicQR>(r);
+}
+
+export async function listDynamicQRs(): Promise<DynamicQR[]> {
+  const r = await fetch(`${BASE}/dynamic`, { headers: authHeaders() });
+  return json<DynamicQR[]>(r);
+}
+
+export async function updateDynamicQR(
+  id: string,
+  data: { destination_url?: string; expires_at?: string; is_active?: boolean }
+): Promise<DynamicQR> {
+  const r = await fetch(`${BASE}/dynamic/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return json<DynamicQR>(r);
+}
+
+export async function deleteDynamicQR(id: string): Promise<void> {
+  await fetch(`${BASE}/dynamic/${id}`, { method: 'DELETE', headers: authHeaders() });
+}
+
+// ── Platform detection ──────────────────────────────────────────────
+export async function detectPlatform(url: string): Promise<{ platform: PlatformDetection | null }> {
+  const r = await fetch(`${BASE}/detect-platform`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  return json<{ platform: PlatformDetection | null }>(r);
+}
+
+export async function getTheme(platformId: string): Promise<QRTheme | null> {
+  const r = await fetch(`${BASE}/themes/${platformId}`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function listThemes(): Promise<QRTheme[]> {
+  const r = await fetch(`${BASE}/themes`);
+  return json<QRTheme[]>(r);
+}
+
+export async function fetchLogo(url: string): Promise<{
+  favicon_b64: string | null;
+  og_image_b64: string | null;
+  source: string;
+}> {
+  const r = await fetch(`${BASE}/logo/fetch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ url }),
+  });
+  return json(r);
+}
+
+export async function upgradePlan(plan = 'pro'): Promise<{ id: string; plan: string; message: string }> {
+  const r = await fetch(`${BASE}/auth/upgrade?plan=${plan}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+  });
+  return json(r);
 }

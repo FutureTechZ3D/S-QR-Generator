@@ -327,3 +327,15 @@ input, textarea, select { font-family: inherit; }
   .qr-types { gap: 6px; }
   .qr-type-chip { padding: 8px 12px; min-width: 60px; font-size: 0.68rem; }
 }
+
+/* ── Platform detection chip ── */
+.platform-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 500;
+}

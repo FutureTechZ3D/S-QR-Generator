@@ -4,8 +4,8 @@ import {
   QrCode, Globe, FileText, Mail, Phone, MessageSquare,
   Wifi, User, MapPin, Youtube, Shield, Zap, Download, Save
 } from 'lucide-react';
-import { previewQR, createQR, getToken } from '@/services/api';
-import type { QRType, QRStyle } from '@/types';
+import { previewQR, createQR, getToken, detectPlatform, getTheme } from '@/services/api';
+import type { QRType, QRStyle, PlatformDetection, QRTheme } from '@/types';
 import { QR_TYPE_LABELS, DEFAULT_STYLE } from '@/types';
 
 // ── QR Type definitions ──────────────────────────────────────────────
@@ -131,6 +131,9 @@ export default function Home() {
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [detectedPlatform, setDetectedPlatform] = useState<PlatformDetection | null>(null);
+  const [appliedTheme, setAppliedTheme] = useState<QRTheme | null>(null);
+  const detectDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Auto-preview as user types (debounced 600ms)
   const triggerPreview = useCallback((
@@ -152,9 +155,57 @@ export default function Home() {
     setActiveType(t); setContent(''); setPreviewB64(null);
   }
 
+  const handleUrlDetection = useCallback(async (url: string) => {
+    if (!url || !url.startsWith('http')) {
+      setDetectedPlatform(null);
+      setAppliedTheme(null);
+      return;
+    }
+    if (detectDebounceRef.current) clearTimeout(detectDebounceRef.current);
+    detectDebounceRef.current = setTimeout(async () => {
+      try {
+        const { platform } = await detectPlatform(url);
+        if (platform) {
+          setDetectedPlatform(platform);
+          // Fetch and auto-apply the platform theme
+          const theme = await getTheme(platform.suggested_theme);
+          if (theme) {
+            setAppliedTheme(theme);
+            const newStyle: QRStyle = {
+              ...style,
+              foreground: theme.fg_color,
+              background: theme.bg_color,
+              fg_color_2: theme.fg_color_2 !== theme.fg_color ? theme.fg_color_2 : undefined,
+              corner_style: theme.corner_style,
+              error_correct: theme.error_correct,
+            };
+            setStyle(newStyle);
+            triggerPreview(activeType, url, newStyle);
+          }
+        } else {
+          setDetectedPlatform(null);
+          setAppliedTheme(null);
+        }
+      } catch {
+        // Silent failure — platform detection is non-critical
+      }
+    }, 400);
+  }, [style, activeType, triggerPreview]);
+
   function handleContentChange(v: string) {
     setContent(v);
     triggerPreview(activeType, v, style);
+    if (activeType === 'url') {
+      handleUrlDetection(v);
+    }
+  }
+
+  function clearTheme() {
+    setDetectedPlatform(null);
+    setAppliedTheme(null);
+    const resetStyle = { ...DEFAULT_STYLE };
+    setStyle(resetStyle);
+    if (content) triggerPreview(activeType, content, resetStyle);
   }
 
   function handleStyleChange(key: keyof QRStyle, value: string | number) {
@@ -240,6 +291,30 @@ export default function Home() {
                 value={content}
                 onChange={handleContentChange}
               />
+
+              {activeType === 'url' && detectedPlatform && (
+                <div
+                  className="platform-chip"
+                  style={{background: detectedPlatform.color, marginBottom: 12}}
+                >
+                  <span style={{fontSize: '1rem'}}>{detectedPlatform.icon_emoji}</span>
+                  <span>Platform detected: {detectedPlatform.name}</span>
+                  {appliedTheme && <span style={{opacity: 0.8, fontSize: '0.75rem'}}>— theme applied</span>}
+                  <button
+                    onClick={clearTheme}
+                    style={{background: 'rgba(255,255,255,0.25)',
+                      border: 'none',
+                      borderRadius: 4,
+                      color: 'white',
+                      cursor: 'pointer',
+                      padding: '2px 8px',
+                      marginLeft: 'auto',
+                      fontSize: '0.8rem',}}
+                  >
+                    ✕ Reset
+                  </button>
+                </div>
+              )}
 
               {/* Style customization */}
               <details style={{ marginBottom: 20 }}>
