@@ -55,6 +55,25 @@ if qr_dir.exists():
     app.mount("/qr-images", StaticFiles(directory=str(qr_dir)), name="qr-images")
 
 
+from .services.qr_themes import list_themes as _list_themes, get_theme as _get_theme
+
+
+@app.get("/api/themes")
+async def get_themes():
+    """Return all platform QR themes."""
+    return _list_themes()
+
+
+@app.get("/api/themes/{platform_id}")
+async def get_theme_by_platform(platform_id: str):
+    """Return QR theme for a specific platform."""
+    theme = _get_theme(platform_id)
+    if not theme:
+        from fastapi import HTTPException
+        raise HTTPException(404, f"No theme found for platform: {platform_id}")
+    return theme
+
+
 @app.get("/api/health")
 async def health():
     return {
