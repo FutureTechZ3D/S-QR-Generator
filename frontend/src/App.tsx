@@ -6,6 +6,7 @@ import './index.css';
 
 const Home          = lazy(() => import('@/pages/Home'));
 const Dashboard     = lazy(() => import('@/pages/Dashboard'));
+const Analytics     = lazy(() => import('@/pages/Analytics'));
 const Login         = lazy(() => import('@/pages/Login'));
 const Register      = lazy(() => import('@/pages/Register'));
 const SocialQR      = lazy(() => import('@/pages/SocialQR'));
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/profile/create" element={<SocialProfile />} />
           <Route path="/profile/edit/:id" element={<SocialProfile />} />
           <Route path="/dashboard"      element={<Dashboard />} />
+          <Route path="/analytics/:id"  element={<Analytics />} />
           <Route path="/login"          element={<Login />} />
           <Route path="/register"       element={<Register />} />
         </Routes>

@@ -1,7 +1,7 @@
 import type {
   QRCode, AuthResponse, User, QRType, QRStyle,
   Platform, SocialProfile, SocialLink, DynamicQR,
-  PlatformDetection, QRTheme,
+  PlatformDetection, QRTheme, DynamicAnalytics,
 } from '@/types';
 
 const BASE = '/api';
@@ -262,4 +262,9 @@ export async function upgradePlan(plan = 'pro'): Promise<{ id: string; plan: str
     headers: authHeaders(),
   });
   return json(r);
+}
+
+export async function getDynamicAnalytics(id: string, days = 30): Promise<DynamicAnalytics> {
+  const r = await fetch(`${BASE}/dynamic/${id}/analytics?days=${days}`, { headers: authHeaders() });
+  return json<DynamicAnalytics>(r);
 }

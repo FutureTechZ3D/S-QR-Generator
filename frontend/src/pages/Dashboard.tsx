@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Plus, Download, Trash2, Edit3, Zap, QrCode, Link2, Copy } from 'lucide-react';
+import { Plus, Download, Trash2, Edit3, Zap, QrCode, Link2, Copy, BarChart3 } from 'lucide-react';
 import {
   listQRCodes, deleteQRCode, getToken, downloadUrl,
   listProfiles, deleteProfile,
@@ -180,6 +180,9 @@ function DynamicCard({ dqr, onDelete }: { dqr: DynamicQR; onDelete: (id: string)
         {dqr.expires_at && ` · Expires ${new Date(dqr.expires_at).toLocaleDateString()}`}
       </div>
       <div className="qr-card__actions">
+        <Link to={`/analytics/${dqr.id}`} className="btn btn--ghost btn--xs" title="Scan analytics">
+          <BarChart3 size={11} /> Analytics
+        </Link>
         <button className="btn btn--danger btn--xs" onClick={() => onDelete(dqr.id)}>
           <Trash2 size={11} />
         </button>

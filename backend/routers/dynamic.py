@@ -6,12 +6,14 @@ POST   /api/dynamic              → create dynamic QR (auth required)
 GET    /api/dynamic              → list user's dynamic QRs (auth required)
 PUT    /api/dynamic/{dqr_id}     → update destination URL (auth required, must own)
 DELETE /api/dynamic/{dqr_id}     → delete (auth required, must own)
-GET    /r/{dqr_id}               → PUBLIC redirect (no auth)
+GET    /api/dynamic/{id}/analytics → scan analytics (auth required, must own)
+GET    /r/{dqr_id}               → PUBLIC redirect (no auth, logs scan)
 """
 import uuid
 import aiofiles
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+import hashlib
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from ..models.dynamic import DynamicQR, DynamicQRCreate, DynamicQRUpdate
 from ..models.qr import QRCreate, QRType, QRStyle
@@ -166,6 +168,7 @@ async def delete_dynamic_qr(
         raise HTTPException(403, "Not authorized to delete this QR")
 
     await db.dynamic_qrs.delete_one({"_id": dqr_id})
+    await db.scans.delete_many({"dqr_id": dqr_id})
     # Also remove qrcodes record
     await db.qrcodes.delete_one({"_id": dqr_id})
     return {"deleted": True, "id": dqr_id}
@@ -174,7 +177,7 @@ async def delete_dynamic_qr(
 # ── Public redirect ───────────────────────────────────────────────────────────
 
 @router.get("/r/{dqr_id}")
-async def redirect_dynamic_qr(dqr_id: str, pw: str = Query(default="")):
+async def redirect_dynamic_qr(request: Request, dqr_id: str, pw: str = Query(default="")):
     """
     Public redirect endpoint. Validates expiry and password, then redirects.
     Increments redirect_count on each successful redirect.
@@ -209,13 +212,115 @@ async def redirect_dynamic_qr(dqr_id: str, pw: str = Query(default="")):
                 status_code=401,
             )
 
-    # Increment redirect count
+    # Increment redirect count and log the scan (logging must never break redirects)
     await db.dynamic_qrs.update_one(
         {"_id": dqr_id},
         {"$inc": {"redirect_count": 1}},
     )
+    try:
+        await db.scans.insert_one(_build_scan(request, dqr_id))
+    except Exception:
+        pass
 
     return RedirectResponse(doc["destination_url"], status_code=302)
+
+
+# ── Scan logging & analytics ──────────────────────────────────────────────────
+
+def _parse_ua(ua: str) -> tuple[str, str]:
+    """Return (device, os) from a User-Agent string using simple heuristics."""
+    u = ua.lower()
+    if "android" in u:
+        os_name = "Android"
+    elif "iphone" in u or "ipad" in u or "ios" in u:
+        os_name = "iOS"
+    elif "windows" in u:
+        os_name = "Windows"
+    elif "mac os" in u or "macintosh" in u:
+        os_name = "macOS"
+    elif "linux" in u:
+        os_name = "Linux"
+    else:
+        os_name = "Other"
+    if "ipad" in u or "tablet" in u:
+        device = "Tablet"
+    elif "mobi" in u or os_name in ("Android", "iOS"):
+        device = "Mobile"
+    elif os_name == "Other":
+        device = "Other"
+    else:
+        device = "Desktop"
+    return device, os_name
+
+
+def _build_scan(request: Request, dqr_id: str) -> dict:
+    ua = request.headers.get("user-agent", "")
+    device, os_name = _parse_ua(ua)
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() or (request.client.host if request.client else "")
+    country = (
+        request.headers.get("cf-ipcountry")
+        or request.headers.get("x-vercel-ip-country")
+        or request.headers.get("x-country")
+        or "Unknown"
+    )
+    # Store only a salted hash of the IP (privacy) — enough to count unique visitors.
+    visitor = hashlib.sha256(f"{settings.secret_key}:{ip}:{ua}".encode()).hexdigest()[:16]
+    return {
+        "dqr_id":    dqr_id,
+        "ts":        datetime.utcnow(),
+        "device":    device,
+        "os":        os_name,
+        "country":   country.upper() if len(country) == 2 else country,
+        "referrer":  request.headers.get("referer", "") or "Direct",
+        "visitor":   visitor,
+    }
+
+
+@router.get("/api/dynamic/{dqr_id}/analytics")
+async def dynamic_qr_analytics(
+    dqr_id: str,
+    days: int = Query(default=30, ge=1, le=365),
+    current_user=Depends(get_current_user),
+):
+    """Scan analytics for a dynamic QR: totals, unique visitors, daily series, breakdowns."""
+    db = get_db()
+    doc = await db.dynamic_qrs.find_one({"_id": dqr_id})
+    if not doc:
+        raise HTTPException(404, "Dynamic QR not found")
+    if doc["user_id"] != current_user["_id"]:
+        raise HTTPException(403, "Not authorized to view this QR")
+
+    since = (datetime.utcnow() - timedelta(days=days - 1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    scans = [s async for s in db.scans.find({"dqr_id": dqr_id, "ts": {"$gte": since}})]
+
+    daily = {(since + timedelta(days=i)).strftime("%Y-%m-%d"): 0 for i in range(days)}
+    counters = {"device": {}, "os": {}, "country": {}, "referrer": {}}
+    visitors = set()
+    for s in scans:
+        daily[s["ts"].strftime("%Y-%m-%d")] = daily.get(s["ts"].strftime("%Y-%m-%d"), 0) + 1
+        visitors.add(s.get("visitor"))
+        for k in counters:
+            v = s.get(k) or "Unknown"
+            counters[k][v] = counters[k].get(v, 0) + 1
+
+    def top(d: dict, n: int = 8):
+        return [{"name": k, "count": v}
+                for k, v in sorted(d.items(), key=lambda x: -x[1])[:n]]
+
+    return {
+        "days":         days,
+        "total_scans":  doc.get("redirect_count", 0),
+        "period_scans": len(scans),
+        "unique":       len(visitors),
+        "daily":        [{"date": d, "count": c} for d, c in daily.items()],
+        "devices":      top(counters["device"]),
+        "os":           top(counters["os"]),
+        "countries":    top(counters["country"]),
+        "referrers":    top(counters["referrer"]),
+    }
 
 
 def _error_page(title: str, message: str) -> str:

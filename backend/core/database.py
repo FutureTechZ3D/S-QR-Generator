@@ -18,5 +18,6 @@ async def ensure_indexes():
     await db.social_profiles.create_index("user_id")
     await db.dynamic_qrs.create_index("user_id")
     await db.qrcodes.create_index("user_id")
+    await db.scans.create_index([("dqr_id", 1), ("ts", -1)])
     await db.logo_cache.create_index("cached_at", expireAfterSeconds=86400)  # 24h TTL
     await db.logo_cache.create_index("domain", unique=True)

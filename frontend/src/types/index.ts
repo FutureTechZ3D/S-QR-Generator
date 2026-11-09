@@ -159,3 +159,16 @@ export interface QRTheme {
   error_correct: string;
   description: string;
 }
+
+export interface NamedCount { name: string; count: number; }
+export interface DynamicAnalytics {
+  days:         number;
+  total_scans:  number;
+  period_scans: number;
+  unique:       number;
+  daily:        { date: string; count: number }[];
+  devices:      NamedCount[];
+  os:           NamedCount[];
+  countries:    NamedCount[];
+  referrers:    NamedCount[];
+}
